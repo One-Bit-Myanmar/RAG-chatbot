@@ -3,19 +3,19 @@ import fitz
 from langchain.text_splitter import CharacterTextSplitter
 from langchain_community.vectorstores import Chroma
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_community.tools.tavily_search import TavilySearchResults
 import google.generativeai as genai
 
 class RAG:
-    def __init__(self, api_key, pdf_dir="../books", persist_dir="./chroma_db", embedding_model_name="models/embedding-001", llm_model="gemini-2.0-flash"):
+    def __init__(self, api_key,search_key,pdf_dir = "#",persist_dir="./chroma_db", embedding_model_name="models/embedding-001", llm_model="gemini-2.0-flash"):
         os.environ["GOOGLE_API_KEY"] = api_key
+        os.environ["TAVILY_API_KEY"] = search_key
         genai.configure(api_key=api_key)
-        
         self.pdf_dir = pdf_dir
         self.persist_dir = persist_dir
-        self.embedding_model = GoogleGenerativeAIEmbeddings(model=embedding_model_name)
+        self.embedding_model = embedding_model_name
         self.splitter = CharacterTextSplitter(separator="\n", chunk_size=1000, chunk_overlap=200, length_function=len)
         self.model = genai.GenerativeModel(llm_model)
-        
         self.vectorstore = None
 
     def load_and_embed_pdfs(self):
@@ -48,15 +48,17 @@ class RAG:
 
     def ask(self, query, top_k=4):
         self.load_vectorstore()
-        retriever = self.vectorstore.as_retriever(search_kwargs={"k": top_k})
-        docs = retriever.get_relevant_documents(query)
+        # retriever = self.vectorstore.as_retriever(search_kwargs={"k": top_k})
+        # docs = retriever.get_relevant_documents(query)
+        retriever = TavilySearchResults(k=5)
+        docs = self.retriever.run(query)
         print(docs)
-        context = "\n\n".join(doc.page_content for doc in docs)
+        context = "\n\n".join([doc['content'] for doc in docs if 'content' in doc])
 
         prompt = f"""
-        You are a cybersecurity assistant. analyze the content from the PDF to answer the question.
+        You are a cybersecurity assistant. analyze the content from given contents to answer the question.
 
-        PDF Content:
+        Content:
         {context}
 
         Question: {query}

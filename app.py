@@ -5,7 +5,8 @@ import main
 app = FastAPI()
 
 API_KEY = "API KEY"
-rag = main.RAG(api_key=API_KEY)
+TAVILY_API_KEY = "Search Key"
+rag = main.RAG(api_key=API_KEY,search_key=TAVILY_API_KEY)
 # rag.load_and_embed_pdfs() #only for first time and add new pdf
 
 class QuestionRequest(BaseModel):
