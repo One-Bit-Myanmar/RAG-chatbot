@@ -5,3 +5,7 @@ google.generativeai
 chromadb  
 langchain_community 
 langchain_google_genai
+tools
+frontend
+sentence-transformers
+PyMuPDF
