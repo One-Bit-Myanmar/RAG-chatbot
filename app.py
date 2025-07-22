@@ -5,8 +5,8 @@ import asyncio
 
 app = FastAPI()
 
-API_KEY = "AIzaSyBH-quBZrJMdrUh8I_stlRCJ03evkFGvc8"
-TAVILY_API_KEY = "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"
+API_KEY = "API Key"
+TAVILY_API_KEY = "Search key"
 
 rag = main.RAG(api_key=API_KEY, search_key=TAVILY_API_KEY)
 
