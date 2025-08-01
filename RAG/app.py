@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-import main
+import RAG.main as main
 import asyncio
 
 app = FastAPI()
