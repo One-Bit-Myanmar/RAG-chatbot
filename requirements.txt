@@ -10,3 +10,4 @@ frontend
 sentence-transformers
 PyMuPDF
 matplotlib
+xgboost
