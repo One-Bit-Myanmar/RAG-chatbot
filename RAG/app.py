@@ -1,7 +1,13 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 import RAG.main as main
-import asyncio
+from fastapi.responses import StreamingResponse
+import json
+import httpx 
+from typing import AsyncGenerator
+
+
+
 
 app = FastAPI()
 
@@ -23,11 +29,67 @@ class QuestionRequest(BaseModel):
 @app.post("/ask/")
 async def ask_question(req: QuestionRequest):    
     try:
-        gemini_answer = rag.ask(req.question)
+        # gemini_answer = rag.ask(req.question)
         local_deepseek = rag.ask_deepseek_local(req.question)
         return {"question": req.question, 
-                "gemini_answer": gemini_answer,
+                # "gemini_answer": gemini_answer,
                 "local_deepseek" :local_deepseek
         }
     except Exception as e:
         return {"error": str(e)}
+    
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
+
+
+@app.post("/ask/local")
+async def ask_question(req: QuestionRequest):    
+
+    ollama_url, prompt = await rag.ask_deepseek_local_async(req.question)
+
+    try: 
+        return StreamingResponse(
+            response_generator(ollama_url, prompt),
+            media_type="application/json"
+        )
+    except Exception as e:
+        return {"error": str(e)}
+    
+
+
+
+async def ollama_stream(ollama_url, prompt):
+    url = f"{ollama_url}/api/chat"
+    payload = {
+        "model": "deepseek-r1:7b",
+        "stream": True,
+        "messages": [{"role": "user", "content": prompt.strip()}]
+    }
+    
+    async with httpx.AsyncClient() as client:
+        print("[DEBUG] Created AsyncClient: ", client)
+        async with client.stream("POST", url, json=payload, timeout=60) as response:
+            print(f"[DEBUG] Received response={response}")
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                print("[DEBUG] Received a line from stream: ", line)
+                yield line
+
+async def response_generator(ollama_url, prompt) -> AsyncGenerator[dict, None]:
+    async for response in ollama_stream(ollama_url, prompt):
+        print("[DEBUG] Received response from ollama_stream: ", response)
+        try:
+            block: dict = json.loads(response)
+        except Exception:
+            print("[DEBUG] Failed to parse JSON line")
+            continue  # skip malformed lines
+        
+        if block:
+            print("[DEBUG] Yielding block")
+            yield json.dumps(block)
+
+        if block.get("done", False):
+            print("[DEBUG] Block indicates done, breaking loop")
+            break

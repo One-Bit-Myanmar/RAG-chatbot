@@ -6,7 +6,9 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_tavily import TavilySearch
 import google.generativeai as genai
+import asyncio
 import requests
+
 class RAG:
     def __init__(self, api_key,search_key,pdf_dir = "books",persist_dir="./chroma_db", embedding_model="all-MiniLM-L6-v2", llm_model="gemini-2.0-flash"):
         os.environ["GOOGLE_API_KEY"] = api_key
@@ -140,3 +142,43 @@ class RAG:
             return data.get("completion", "No completion found")
         except Exception as e:
             return f"Error calling Deepseek: {e}"
+        
+
+
+    async def ask_deepseek_local_async(self, query, top_k=5, ollama_url="http://localhost:11434"):
+        self.load_vectorstore()
+
+        # 1. Get PDF documents (async)
+        pdf_docs = []
+        if self.vectorstore:
+            pdf_retriever = self.vectorstore.as_retriever(search_kwargs={"k": top_k})
+            if hasattr(pdf_retriever, 'aget_relevant_documents'):
+                pdf_docs = await pdf_retriever.aget_relevant_documents(query)
+            else:
+                loop = asyncio.get_running_loop()
+                pdf_docs = await loop.run_in_executor(
+                    None, pdf_retriever.get_relevant_documents, query
+                )
+
+        # 2. Get web documents (async)
+        tavily_retriever = TavilySearch()
+        web_docs = await tavily_retriever.ainvoke({"query": query, "num_results": top_k})
+
+        # 3. Combine documents
+        combined_texts = [d.page_content for d in pdf_docs]
+        combined_texts += [d for d in web_docs]
+        context = "\n\n".join(filter(None, [text.strip() for text in combined_texts]))
+        print("----------------------------------------------------")
+        print(context)
+        prompt = f"""
+        You are a cybersecurity assistant. Analyze the combined content below and answer the question.
+
+        Content:
+        {context}
+
+        Question: {query}
+        Answer:"""
+
+        print(f"[DEBUG] Prompt: {prompt.strip()}")
+
+        return [ollama_url, prompt]
