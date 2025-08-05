@@ -5,6 +5,7 @@ from fastapi.responses import StreamingResponse
 import json
 import httpx 
 from typing import AsyncGenerator
+from fastapi.middleware.cors import CORSMiddleware
 
 
 
@@ -15,6 +16,14 @@ API_KEY = "API Key"
 TAVILY_API_KEY = "Search key"
 
 rag = main.RAG(api_key=API_KEY, search_key=TAVILY_API_KEY)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,  # Set to True if your API uses cookies or authorization headers
+    allow_methods=["*"],     # Or specify specific methods like ["GET", "POST"]
+    allow_headers=["*"],     # Or specify specific headers
+)
 
 class QuestionRequest(BaseModel):
     question: str
@@ -44,7 +53,7 @@ async def health_check():
     return {"status": "healthy"}
 
 
-@app.post("/ask/local")
+@app.post("/ask/local/streaming")
 async def ask_question(req: QuestionRequest):    
 
     ollama_url, prompt = await rag.ask_deepseek_local_async(req.question)
@@ -54,6 +63,15 @@ async def ask_question(req: QuestionRequest):
             response_generator(ollama_url, prompt),
             media_type="application/json"
         )
+    except Exception as e:
+        return {"error": str(e)}
+    
+
+@app.post("/ask/local")
+async def ask_question_local(req: QuestionRequest):    
+    try:
+        localdeep_seek = rag.ask_deepseek_local(req.question)
+        return {"response": localdeep_seek}
     except Exception as e:
         return {"error": str(e)}
     

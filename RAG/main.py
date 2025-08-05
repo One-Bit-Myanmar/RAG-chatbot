@@ -128,10 +128,11 @@ class RAG:
         # 5. Call Deepseek via Ollama API (/api/chat for chat models)
         url = f"{ollama_url}/api/chat"
         payload = {
-            "model": "deepseek-r1",  # must match your local model name
+            "model": "deepseek-r1:7b",  # must match your local model name
             "messages": [
                 {"role": "user", "content": "hello"}
-            ]
+            ],
+            "stream": False
         }
 
         try:
@@ -139,7 +140,7 @@ class RAG:
             resp.raise_for_status()
             data = resp.json()
             # The exact key depends on Ollama's response format, usually:
-            return data.get("completion", "No completion found")
+            return data.get("message", "No completion found").get("content", "No content")
         except Exception as e:
             return f"Error calling Deepseek: {e}"
         
