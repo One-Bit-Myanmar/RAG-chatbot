@@ -2,3 +2,5 @@ chroma_db
 venv
 dataset
 saved_model
+**/*.pyc
+**/__pycache__
