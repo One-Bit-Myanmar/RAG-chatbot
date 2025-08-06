@@ -4,3 +4,4 @@ dataset
 saved_model
 **/*.pyc
 **/__pycache__
+save_urlScanner
