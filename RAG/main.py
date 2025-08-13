@@ -49,137 +49,50 @@ class RAG:
         else:
             print("[WARN] Vectorstore directory not found. Run load_and_embed_pdfs() first.")
 
-    def ask(self, query, top_k=4):
+    def ask(self, query, top_k=2, score_threshold=0.75):
         self.load_vectorstore()
-        # 2. Retrieve from local vectorstore
+
+        # Default: no retrieved docs
+        pdf_docs = []
+        pdf_scores = []
+
+        # Retrieve from local KB
         if self.vectorstore:
-            pdf_retriever = self.vectorstore.as_retriever(search_kwargs={"k": top_k})
+            pdf_retriever = self.vectorstore.as_retriever(search_kwargs={"k": top_k, "score_threshold": 0.0})
             pdf_docs = pdf_retriever.get_relevant_documents(query)
+            # Chroma returns similarity in metadata sometimes as "score" or "_distance"
+            pdf_scores = [d.metadata.get("score", 0.0) for d in pdf_docs]
+
+        # Decide whether RAG is needed based on similarity score
+        use_rag = bool(pdf_docs) and max(pdf_scores) >= score_threshold
+
+        if use_rag:
+            # Retrieve from Tavily too
+            tavily_retriever = TavilySearch()
+            web_docs = tavily_retriever.invoke({"query": query, "num_results": top_k})
+
+            # Merge context
+            combined_texts = [d.page_content for d in pdf_docs] + web_docs
+            context = "\n\n".join([text for text in combined_texts if text.strip()])
+
+            system_prompt = "You are a cybersecurity assistant. Analyze the combined content below and answer the question."
+
+            final_prompt = f"""
+            {system_prompt}
+
+            Content:
+            {context}
+
+            Question: {query}
+            Answer:
+            """
         else:
-            pdf_docs = []
-
-        # 3. Retrieve from Tavily (web search)
-        tavily_retriever = TavilySearch()
-        web_docs = tavily_retriever.invoke({"query": query, "num_results": top_k})
-
-        combined_texts = []
-
-        for d in pdf_docs:
-            combined_texts.append(getattr(d, "page_content", ""))
-
-        for d in web_docs:
-            combined_texts.append(d)
-
-        context = "\n\n".join([text for text in combined_texts if text.strip()])
-
-
-        prompt = f"""
-        You are a cybersecurity assistant. Analyze the combined content below and answer the question.
-
-        Content:
-        {context}
-
-        Question: {query}
-        Answer:
-        """
+            # Skip RAG and just answer normally
+            final_prompt = query  # plain chat
+            print("[INFO] Skipping RAG — low similarity score or no relevant docs.")
 
         try:
-            response = self.model.generate_content(prompt)
+            response = self.model.generate_content(final_prompt)
             return response.text
         except Exception as e:
             return f"Error talking to Gemini: {e}"
-        
-    def ask_deepseek_local(self,query,top_k = 5,ollama_url="http://localhost:11434"):
-        
-        self.load_vectorstore()
-        # 2. Retrieve from local vectorstore
-        if self.vectorstore:
-            pdf_retriever = self.vectorstore.as_retriever(search_kwargs={"k": top_k})
-            pdf_docs = pdf_retriever.get_relevant_documents(query)
-        else:
-            pdf_docs = []
-
-        # 3. Retrieve from Tavily (web search)
-        tavily_retriever = TavilySearch()
-        web_docs = tavily_retriever.invoke({"query": query, "num_results": top_k})
-
-        # 4. Combine documents
-        combined_texts = []
-
-        for d in pdf_docs:
-            combined_texts.append(getattr(d, "page_content", ""))
-
-        for d in web_docs:
-            combined_texts.append(d)
-
-        context = "\n\n".join([text for text in combined_texts if text.strip()])
-        print("----------------------------------------------------")
-        print(context)
-        prompt = f"""
-        You are a cybersecurity assistant. Analyze the combined content below and answer the question.
-
-        Content:
-        {context}
-
-        Question: {query}
-        Answer:"""
-        
-        
-        # 5. Call Deepseek via Ollama API (/api/chat for chat models)
-        url = f"{ollama_url}/api/chat"
-        payload = {
-            "model": "deepseek-r1:7b",  # must match your local model name
-            "messages": [
-                {"role": "user", "content": "hello"}
-            ],
-            "stream": False
-        }
-
-        try:
-            resp = requests.post(url, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-            # The exact key depends on Ollama's response format, usually:
-            return data.get("message", "No completion found").get("content", "No content")
-        except Exception as e:
-            return f"Error calling Deepseek: {e}"
-        
-
-
-    async def ask_deepseek_local_async(self, query, top_k=5, ollama_url="http://localhost:11434"):
-        self.load_vectorstore()
-
-        # 1. Get PDF documents (async)
-        pdf_docs = []
-        if self.vectorstore:
-            pdf_retriever = self.vectorstore.as_retriever(search_kwargs={"k": top_k})
-            if hasattr(pdf_retriever, 'aget_relevant_documents'):
-                pdf_docs = await pdf_retriever.aget_relevant_documents(query)
-            else:
-                loop = asyncio.get_running_loop()
-                pdf_docs = await loop.run_in_executor(
-                    None, pdf_retriever.get_relevant_documents, query
-                )
-
-        # 2. Get web documents (async)
-        tavily_retriever = TavilySearch()
-        web_docs = await tavily_retriever.ainvoke({"query": query, "num_results": top_k})
-
-        # 3. Combine documents
-        combined_texts = [d.page_content for d in pdf_docs]
-        combined_texts += [d for d in web_docs]
-        context = "\n\n".join(filter(None, [text.strip() for text in combined_texts]))
-        print("----------------------------------------------------")
-        print(context)
-        prompt = f"""
-        You are a cybersecurity assistant. Analyze the combined content below and answer the question.
-
-        Content:
-        {context}
-
-        Question: {query}
-        Answer:"""
-
-        print(f"[DEBUG] Prompt: {prompt.strip()}")
-
-        return [ollama_url, prompt]
