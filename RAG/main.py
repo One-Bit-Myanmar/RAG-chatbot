@@ -49,22 +49,22 @@ class RAG:
         else:
             print("[WARN] Vectorstore directory not found. Run load_and_embed_pdfs() first.")
 
-    def ask(self, query, top_k=2, score_threshold=0.75):
+    def ask(self, query, top_k=2, distance_threshold=0.25):
         self.load_vectorstore()
 
-        # Default: no retrieved docs
+        use_rag = False
         pdf_docs = []
-        pdf_scores = []
 
-        # Retrieve from local KB
         if self.vectorstore:
-            pdf_retriever = self.vectorstore.as_retriever(search_kwargs={"k": top_k, "score_threshold": 0.0})
-            pdf_docs = pdf_retriever.get_relevant_documents(query)
-            # Chroma returns similarity in metadata sometimes as "score" or "_distance"
-            pdf_scores = [d.metadata.get("score", 0.0) for d in pdf_docs]
+            # This returns [(Document, distance), ...]
+            pdf_docs_with_scores = self.vectorstore.similarity_search_with_score(query, k=top_k)
 
-        # Decide whether RAG is needed based on similarity score
-        use_rag = bool(pdf_docs) and max(pdf_scores) >= score_threshold
+            if pdf_docs_with_scores:
+                min_distance = min(score for _, score in pdf_docs_with_scores)
+                use_rag = min_distance <= distance_threshold  # lower distance = more relevant
+
+                # Keep only the documents
+                pdf_docs = [doc for doc, _ in pdf_docs_with_scores]
 
         if use_rag:
             # Retrieve from Tavily too
@@ -72,7 +72,7 @@ class RAG:
             web_docs = tavily_retriever.invoke({"query": query, "num_results": top_k})
 
             # Merge context
-            combined_texts = [d.page_content for d in pdf_docs] + web_docs
+            combined_texts = [getattr(d, "page_content", "") for d in pdf_docs] + web_docs
             context = "\n\n".join([text for text in combined_texts if text.strip()])
 
             system_prompt = "You are a cybersecurity assistant. Analyze the combined content below and answer the question."
@@ -88,8 +88,8 @@ class RAG:
             """
         else:
             # Skip RAG and just answer normally
-            final_prompt = query  # plain chat
-            print("[INFO] Skipping RAG — low similarity score or no relevant docs.")
+            final_prompt = query
+            print("[INFO] Skipping RAG — low relevance in KB.")
 
         try:
             response = self.model.generate_content(final_prompt)
