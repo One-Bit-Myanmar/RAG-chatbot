@@ -12,3 +12,4 @@ PyMuPDF
 matplotlib
 xgboost
 transformers
+langchain_ollama
