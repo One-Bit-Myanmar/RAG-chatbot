@@ -13,3 +13,5 @@ matplotlib
 xgboost
 transformers
 langchain_ollama
+schedule
+langkit
